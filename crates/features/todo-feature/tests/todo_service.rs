@@ -1,3 +1,8 @@
+//! BDD-style behavior tests for the Todo feature
+//!
+//! These tests verify todo-related business behaviors work correctly.
+//! Focus on workflows and business rules, not implementation details.
+
 use domain::TodoStatus;
 use sqlx::PgPool;
 use todo_feature::{CreateTodoInput, TodoFeatureError, TodoService, UpdateTodoInput};
@@ -18,10 +23,18 @@ async fn create_test_user(pool: &PgPool, email: &str) -> Uuid {
     user.id
 }
 
+// =============================================================================
+// Todo Creation Behaviors
+// =============================================================================
+
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_create_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn user_can_create_todo_with_title_and_description(
+    pool: PgPool,
+) -> Result<(), TodoFeatureError> {
+    // Given a registered user
     let user_id = create_test_user(&pool, "create-todo@example.com").await;
 
+    // When creating a todo with title and description
     let todo = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -32,15 +45,17 @@ async fn test_create_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
     )
     .await?;
 
+    // Then the todo is created with the correct data
     assert_eq!(todo.user_id, user_id);
     assert_eq!(todo.title, "My Task");
     assert_eq!(todo.description, Some("A description".to_string()));
+    // And it starts in pending status
     assert_eq!(todo.status, TodoStatus::Pending);
     Ok(())
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_create_todo_without_description(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn user_can_create_todo_without_description(pool: PgPool) -> Result<(), TodoFeatureError> {
     let user_id = create_test_user(&pool, "create-todo2@example.com").await;
 
     let todo = TodoService::create(
@@ -59,7 +74,7 @@ async fn test_create_todo_without_description(pool: PgPool) -> Result<(), TodoFe
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_create_todo_user_not_found(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn creating_todo_for_nonexistent_user_fails(pool: PgPool) -> Result<(), TodoFeatureError> {
     let result = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -74,10 +89,14 @@ async fn test_create_todo_user_not_found(pool: PgPool) -> Result<(), TodoFeature
     Ok(())
 }
 
-#[sqlx::test(migrations = "../../../migrations")]
-async fn test_get_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
-    let user_id = create_test_user(&pool, "get-todo@example.com").await;
+// =============================================================================
+// Todo Query Behaviors
+// =============================================================================
 
+#[sqlx::test(migrations = "../../../migrations")]
+async fn todo_can_be_found_by_id(pool: PgPool) -> Result<(), TodoFeatureError> {
+    // Given a user with a todo
+    let user_id = create_test_user(&pool, "get-todo@example.com").await;
     let created = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -88,15 +107,17 @@ async fn test_get_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
     )
     .await?;
 
+    // When querying by ID
     let found = TodoService::get(&pool, created.id).await?;
 
+    // Then the todo is found
     assert_eq!(found.id, created.id);
     assert_eq!(found.title, "Find Me");
     Ok(())
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_get_todo_not_found(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn querying_nonexistent_todo_returns_not_found(pool: PgPool) -> Result<(), TodoFeatureError> {
     let result = TodoService::get(&pool, Uuid::new_v4()).await;
 
     assert!(matches!(result, Err(TodoFeatureError::NotFound(_))));
@@ -104,10 +125,10 @@ async fn test_get_todo_not_found(pool: PgPool) -> Result<(), TodoFeatureError> {
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_list_for_user(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn user_can_list_their_todos(pool: PgPool) -> Result<(), TodoFeatureError> {
+    // Given a user with multiple todos
     let user_id = create_test_user(&pool, "list-todos@example.com").await;
 
-    // Create multiple todos
     TodoService::create(
         &pool,
         CreateTodoInput {
@@ -138,14 +159,16 @@ async fn test_list_for_user(pool: PgPool) -> Result<(), TodoFeatureError> {
     )
     .await?;
 
+    // When listing todos for the user
     let todos = TodoService::list_for_user(&pool, user_id).await?;
 
+    // Then all todos are returned
     assert_eq!(todos.len(), 3);
     Ok(())
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_list_for_user_empty(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn listing_todos_when_none_exist_returns_empty(pool: PgPool) -> Result<(), TodoFeatureError> {
     let user_id = create_test_user(&pool, "empty-todos@example.com").await;
 
     let todos = TodoService::list_for_user(&pool, user_id).await?;
@@ -155,7 +178,8 @@ async fn test_list_for_user_empty(pool: PgPool) -> Result<(), TodoFeatureError> 
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_list_for_user_isolates_users(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn users_only_see_their_own_todos(pool: PgPool) -> Result<(), TodoFeatureError> {
+    // Given two users with their own todos
     let user1 = create_test_user(&pool, "user1@example.com").await;
     let user2 = create_test_user(&pool, "user2@example.com").await;
 
@@ -179,9 +203,11 @@ async fn test_list_for_user_isolates_users(pool: PgPool) -> Result<(), TodoFeatu
     )
     .await?;
 
+    // When each user lists their todos
     let user1_todos = TodoService::list_for_user(&pool, user1).await?;
     let user2_todos = TodoService::list_for_user(&pool, user2).await?;
 
+    // Then they only see their own
     assert_eq!(user1_todos.len(), 1);
     assert_eq!(user1_todos[0].title, "User 1 Task");
     assert_eq!(user2_todos.len(), 1);
@@ -190,10 +216,10 @@ async fn test_list_for_user_isolates_users(pool: PgPool) -> Result<(), TodoFeatu
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_list_for_user_by_status(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn todos_can_be_filtered_by_status(pool: PgPool) -> Result<(), TodoFeatureError> {
+    // Given a user with todos in different statuses
     let user_id = create_test_user(&pool, "status-list@example.com").await;
 
-    // Create todos with different statuses
     let todo1 = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -226,13 +252,14 @@ async fn test_list_for_user_by_status(pool: PgPool) -> Result<(), TodoFeatureErr
     .await?;
     TodoService::complete(&pool, todo3.id).await?;
 
-    // Filter by status
+    // When filtering by each status
     let pending = TodoService::list_for_user_by_status(&pool, user_id, TodoStatus::Pending).await?;
     let in_progress =
         TodoService::list_for_user_by_status(&pool, user_id, TodoStatus::InProgress).await?;
     let completed =
         TodoService::list_for_user_by_status(&pool, user_id, TodoStatus::Completed).await?;
 
+    // Then only matching todos are returned
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].id, todo1.id);
     assert_eq!(in_progress.len(), 1);
@@ -242,10 +269,14 @@ async fn test_list_for_user_by_status(pool: PgPool) -> Result<(), TodoFeatureErr
     Ok(())
 }
 
-#[sqlx::test(migrations = "../../../migrations")]
-async fn test_update_todo_title(pool: PgPool) -> Result<(), TodoFeatureError> {
-    let user_id = create_test_user(&pool, "update-title@example.com").await;
+// =============================================================================
+// Todo Update Behaviors
+// =============================================================================
 
+#[sqlx::test(migrations = "../../../migrations")]
+async fn todo_title_can_be_updated(pool: PgPool) -> Result<(), TodoFeatureError> {
+    // Given a user with a todo
+    let user_id = create_test_user(&pool, "update-title@example.com").await;
     let created = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -256,6 +287,7 @@ async fn test_update_todo_title(pool: PgPool) -> Result<(), TodoFeatureError> {
     )
     .await?;
 
+    // When updating the title
     let updated = TodoService::update(
         &pool,
         created.id,
@@ -267,16 +299,16 @@ async fn test_update_todo_title(pool: PgPool) -> Result<(), TodoFeatureError> {
     )
     .await?;
 
+    // Then the title is changed
     assert_eq!(updated.title, "New Title");
-    // Description should be preserved
+    // And the description is preserved
     assert_eq!(updated.description, Some("Original desc".to_string()));
     Ok(())
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_update_todo_description(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn todo_description_can_be_updated(pool: PgPool) -> Result<(), TodoFeatureError> {
     let user_id = create_test_user(&pool, "update-desc@example.com").await;
-
     let created = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -304,9 +336,8 @@ async fn test_update_todo_description(pool: PgPool) -> Result<(), TodoFeatureErr
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_update_todo_status(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn todo_status_can_be_updated_directly(pool: PgPool) -> Result<(), TodoFeatureError> {
     let user_id = create_test_user(&pool, "update-status@example.com").await;
-
     let created = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -335,7 +366,7 @@ async fn test_update_todo_status(pool: PgPool) -> Result<(), TodoFeatureError> {
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_update_todo_not_found(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn updating_nonexistent_todo_fails(pool: PgPool) -> Result<(), TodoFeatureError> {
     let result = TodoService::update(
         &pool,
         Uuid::new_v4(),
@@ -351,10 +382,13 @@ async fn test_update_todo_not_found(pool: PgPool) -> Result<(), TodoFeatureError
     Ok(())
 }
 
-#[sqlx::test(migrations = "../../../migrations")]
-async fn test_complete_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
-    let user_id = create_test_user(&pool, "complete@example.com").await;
+// =============================================================================
+// Todo Status Transition Behaviors
+// =============================================================================
 
+#[sqlx::test(migrations = "../../../migrations")]
+async fn todo_can_be_marked_as_completed(pool: PgPool) -> Result<(), TodoFeatureError> {
+    let user_id = create_test_user(&pool, "complete@example.com").await;
     let created = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -372,7 +406,7 @@ async fn test_complete_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_complete_todo_not_found(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn completing_nonexistent_todo_fails(pool: PgPool) -> Result<(), TodoFeatureError> {
     let result = TodoService::complete(&pool, Uuid::new_v4()).await;
 
     assert!(matches!(result, Err(TodoFeatureError::NotFound(_))));
@@ -380,9 +414,8 @@ async fn test_complete_todo_not_found(pool: PgPool) -> Result<(), TodoFeatureErr
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_start_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn todo_can_be_started(pool: PgPool) -> Result<(), TodoFeatureError> {
     let user_id = create_test_user(&pool, "start@example.com").await;
-
     let created = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -400,17 +433,20 @@ async fn test_start_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_start_todo_not_found(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn starting_nonexistent_todo_fails(pool: PgPool) -> Result<(), TodoFeatureError> {
     let result = TodoService::start(&pool, Uuid::new_v4()).await;
 
     assert!(matches!(result, Err(TodoFeatureError::NotFound(_))));
     Ok(())
 }
 
-#[sqlx::test(migrations = "../../../migrations")]
-async fn test_delete_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
-    let user_id = create_test_user(&pool, "delete@example.com").await;
+// =============================================================================
+// Todo Deletion Behaviors
+// =============================================================================
 
+#[sqlx::test(migrations = "../../../migrations")]
+async fn todo_can_be_deleted(pool: PgPool) -> Result<(), TodoFeatureError> {
+    let user_id = create_test_user(&pool, "delete@example.com").await;
     let created = TodoService::create(
         &pool,
         CreateTodoInput {
@@ -431,7 +467,7 @@ async fn test_delete_todo(pool: PgPool) -> Result<(), TodoFeatureError> {
 }
 
 #[sqlx::test(migrations = "../../../migrations")]
-async fn test_delete_todo_not_found(pool: PgPool) -> Result<(), TodoFeatureError> {
+async fn deleting_nonexistent_todo_returns_false(pool: PgPool) -> Result<(), TodoFeatureError> {
     let deleted = TodoService::delete(&pool, Uuid::new_v4()).await?;
     assert!(!deleted);
     Ok(())

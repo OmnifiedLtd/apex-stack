@@ -115,9 +115,22 @@ DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test
 
 **Test locations:**
 - `crates/domain/tests/` - Repository integration tests (User, Todo)
-- `crates/features/user-feature/tests/` - User service tests (registration, job enqueue)
-- `crates/features/todo-feature/tests/` - Todo service tests (CRUD, status transitions)
-- `crates/apps/graphql-api/tests/` - BDD-style GraphQL API tests (user journeys, behaviors)
+- `crates/features/user-feature/tests/` - BDD behavior tests + user journey tests
+- `crates/features/todo-feature/tests/` - BDD behavior tests + todo workflow tests
+- `crates/apps/graphql-api/tests/` - API contract tests + smoke tests
+
+### Test Philosophy
+
+**Domain tests:** Verify database operations work correctly.
+Focus on CRUD, constraints, and edge cases.
+
+**Feature tests:** Verify business behaviors work correctly.
+Use BDD-style naming (`user_can_register`, `todo_can_be_completed`).
+This is where user journeys and workflows are tested - transport agnostic.
+
+**API tests:** Verify the API layer correctly exposes features.
+Contract tests (right fields, right types) and smoke tests (happy paths).
+Keep minimal - behaviors are tested at the feature layer.
 
 ### Adding a New Feature
 
