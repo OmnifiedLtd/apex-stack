@@ -5,6 +5,7 @@ This file provides context for Claude Code when working on this project.
 ## Project Overview
 
 APEX Stack is a Rust web application template using:
+
 - **Axum** - HTTP framework
 - **PostgreSQL** - Database
 - **SQLx** - Database driver (runtime queries via SeaQuery, not compile-time macros)
@@ -41,6 +42,7 @@ cargo run -p graphql-api
 Migrations are embedded and run automatically on app startup. No manual steps needed.
 
 **Creating a new migration:**
+
 ```bash
 sqlx migrate add <name>
 # Edit the generated .up.sql and .down.sql files
@@ -48,6 +50,7 @@ sqlx migrate add <name>
 ```
 
 **Rolling back:**
+
 ```bash
 sqlx migrate revert
 ```
@@ -82,6 +85,7 @@ sqlx::query_as_with::<_, User, _>(&sql, values)
 #### No `cargo sqlx prepare` Needed
 
 This stack uses SeaQuery (runtime query building) instead of `sqlx::query!()` macros (compile-time checked). Benefits:
+
 - No `.sqlx/` cache to maintain
 - Docker/CI builds don't need a running database
 - Trade-off: Query errors are runtime, not compile-time
@@ -111,16 +115,16 @@ The `migrations/` folder contains sqlxmq migrations prefixed with `sqlxmq_`. The
 
 ## Common Tasks
 
-| Task | Command |
-|------|---------|
-| Start Postgres | `docker compose up -d` |
-| Stop Postgres | `docker compose down` |
-| Reset database | `docker compose down -v && docker compose up -d` |
-| Run app | `cargo run -p graphql-api` |
-| Run tests | `cargo test` |
-| Check compilation | `cargo check` |
-| Add migration | `sqlx migrate add <name>` |
-| Rollback migration | `sqlx migrate revert` |
+| Task               | Command                                          |
+| ------------------ | ------------------------------------------------ |
+| Start Postgres     | `docker compose up -d`                           |
+| Stop Postgres      | `docker compose down`                            |
+| Reset database     | `docker compose down -v && docker compose up -d` |
+| Run app            | `cargo run -p graphql-api`                       |
+| Run tests          | `cargo test`                                     |
+| Check compilation  | `cargo check`                                    |
+| Add migration      | `sqlx migrate add <name>`                        |
+| Rollback migration | `sqlx migrate revert`                            |
 
 ## Environment Variables
 
