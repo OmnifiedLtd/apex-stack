@@ -298,6 +298,58 @@ fly launch
 fly deploy
 ```
 
-## License
+## Integrating SeaQuery for Dynamic Queries
 
-MIT
+While this stack primarily uses `sqlx::query!` macros for compile-time safety, `SeaQuery` remains a powerful option for building complex, dynamic SQL queries where the structure of the query might change at runtime (e.g., advanced filtering and sorting).
+
+To integrate `SeaQuery` into your `domain` crate:
+
+1.  **Add Dependencies**: In `crates/domain/Cargo.toml`, add:
+    ```toml
+    sea-query = { version = "0.32", features = ["postgres-types", "thread-safe", "with-uuid", "with-time"] }
+    sea-query-binder = { version = "0.7", features = ["sqlx-postgres", "with-uuid", "with-time"] }
+    ```
+
+2.  **Usage Example**:
+    ```rust
+    use sea_query::{Query, Expr, PostgresQueryBuilder, Iden};
+    use sea_query_binder::SqlxBinder;
+    use sqlx::{Executor, Postgres}; // Assuming you're in a repository context
+    use uuid::Uuid; // Example type
+
+    #[derive(Iden)]
+    enum MyTable {
+        Table,
+        ColumnA,
+        ColumnB,
+    }
+
+    struct MyStruct { /* ... matching query output ... */ }
+    // Implement sqlx::FromRow for MyStruct if fetching directly,
+    // or fetch into a raw struct and convert.
+
+    async fn find_dynamic_data<'e, E>(
+        executor: E,
+        filter_value: Option<String>
+    ) -> Result<Vec<MyStruct>, Box<dyn std::error::Error + Send + Sync>> // Use a more specific error type
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        let mut query = Query::select();
+        query.columns([MyTable::ColumnA, MyTable::ColumnB]).from(MyTable::Table);
+
+        if let Some(value) = filter_value {
+            query.and_where(Expr::col(MyTable::ColumnA).eq(value));
+        }
+
+        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
+
+        let results = sqlx::query_as_with::<_, MyStruct, _>(&sql, values)
+            .fetch_all(executor)
+            .await?;
+
+        Ok(results)
+    }
+    ```
+
+This example shows how to construct a dynamic `SELECT` query and execute it using `sqlx`'s `Executor` trait, maintaining compatibility with the Unified Executor Pattern.
