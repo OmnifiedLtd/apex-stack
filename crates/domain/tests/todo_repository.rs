@@ -125,9 +125,12 @@ async fn test_list_by_user_and_status(pool: PgPool) -> Result<(), DomainError> {
     TodoRepository::update_status(&pool, todo3.id, TodoStatus::Completed).await?;
 
     // Filter by status
-    let pending = TodoRepository::list_by_user_and_status(&pool, user_id, TodoStatus::Pending).await?;
-    let in_progress = TodoRepository::list_by_user_and_status(&pool, user_id, TodoStatus::InProgress).await?;
-    let completed = TodoRepository::list_by_user_and_status(&pool, user_id, TodoStatus::Completed).await?;
+    let pending =
+        TodoRepository::list_by_user_and_status(&pool, user_id, TodoStatus::Pending).await?;
+    let in_progress =
+        TodoRepository::list_by_user_and_status(&pool, user_id, TodoStatus::InProgress).await?;
+    let completed =
+        TodoRepository::list_by_user_and_status(&pool, user_id, TodoStatus::Completed).await?;
 
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].id, todo1.id);
@@ -161,7 +164,8 @@ async fn test_update_status(pool: PgPool) -> Result<(), DomainError> {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_update_status_not_found(pool: PgPool) -> Result<(), DomainError> {
-    let updated = TodoRepository::update_status(&pool, Uuid::new_v4(), TodoStatus::Completed).await?;
+    let updated =
+        TodoRepository::update_status(&pool, Uuid::new_v4(), TodoStatus::Completed).await?;
     assert!(updated.is_none());
     Ok(())
 }
@@ -169,14 +173,12 @@ async fn test_update_status_not_found(pool: PgPool) -> Result<(), DomainError> {
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_update_content(pool: PgPool) -> Result<(), DomainError> {
     let user_id = create_test_user(&pool, "update-content@example.com").await?;
-    let created = TodoRepository::create(&pool, user_id, "Original Title", Some("Original desc")).await?;
+    let created =
+        TodoRepository::create(&pool, user_id, "Original Title", Some("Original desc")).await?;
 
-    let updated = TodoRepository::update_content(
-        &pool,
-        created.id,
-        "New Title",
-        Some("New description"),
-    ).await?;
+    let updated =
+        TodoRepository::update_content(&pool, created.id, "New Title", Some("New description"))
+            .await?;
 
     assert!(updated.is_some());
     let updated = updated.unwrap();
@@ -189,7 +191,8 @@ async fn test_update_content(pool: PgPool) -> Result<(), DomainError> {
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_update_content_remove_description(pool: PgPool) -> Result<(), DomainError> {
     let user_id = create_test_user(&pool, "remove-desc@example.com").await?;
-    let created = TodoRepository::create(&pool, user_id, "Has Description", Some("Description")).await?;
+    let created =
+        TodoRepository::create(&pool, user_id, "Has Description", Some("Description")).await?;
 
     let updated = TodoRepository::update_content(&pool, created.id, "No Description", None).await?;
 

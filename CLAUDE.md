@@ -114,8 +114,9 @@ DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test
 - Requires Postgres running (`docker compose up -d`)
 
 **Test locations:**
-- `crates/domain/tests/` - Repository integration tests
-- Feature crates can have their own `tests/` directories
+- `crates/domain/tests/` - Repository integration tests (User, Todo)
+- `crates/features/user-feature/tests/` - User service tests (registration, job enqueue)
+- `crates/features/todo-feature/tests/` - Todo service tests (CRUD, status transitions)
 
 ### Adding a New Feature
 

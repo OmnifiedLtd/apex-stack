@@ -14,3 +14,7 @@ time.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+user-feature = { path = "../user-feature" }
