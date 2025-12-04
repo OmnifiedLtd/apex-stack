@@ -1,4 +1,3 @@
----
 name: feature-impl-agent
 description: Expert in implementing feature layer services for APEX Stack. Use this agent when creating new features, business logic, services, or background jobs in the features layer.
 model: opus
@@ -42,8 +41,8 @@ The APEX Stack's superpower is **atomic transactions that include both database 
 ```rust
 // User creation and welcome email job are atomic - both succeed or both fail!
 let mut tx = pool.begin().await?;
-UserRepository::create(&mut tx, &email, &name).await?;
-UserJobs::enqueue_welcome_email(&mut tx, user_id, email, name).await?;
+UserRepository::create(&mut *tx, &email, &name).await?; // Note &mut *tx
+UserJobs::enqueue_welcome_email(&mut *tx, user_id, email, name).await?;
 tx.commit().await?;  // ATOMIC: Both succeed or both fail
 ```
 
@@ -87,9 +86,11 @@ pub enum UserFeatureError {
 
 ## Example: Service with Transactional Job Enqueue
 
+Services leverage the **Unified Executor Pattern** from the domain layer.
+
 ```rust
 use domain::{User, UserRepository};
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool, Postgres};
 use uuid::Uuid;
 
 use crate::error::UserFeatureError;
@@ -111,8 +112,10 @@ pub struct UserService;
 
 impl UserService {
     /// Register a new user and enqueue a welcome email atomically
+    /// Requires a concrete Pool to manage the transaction lifecycle
     pub async fn register(pool: &PgPool, input: CreateUserInput) -> Result<User, UserFeatureError> {
         // Check if email already exists (business rule)
+        // Can use pool directly for reads
         if UserRepository::find_by_email(pool, &input.email)
             .await?
             .is_some()
@@ -124,11 +127,12 @@ impl UserService {
         let mut tx = pool.begin().await.map_err(domain::DomainError::from)?;
 
         // Create the user
-        let user = UserRepository::create(&mut tx, &input.email, &input.name).await?;
+        // PASS &mut *tx (dereferenced) to satisfy the Executor trait
+        let user = UserRepository::create(&mut *tx, &input.email, &input.name).await?;
 
         // Enqueue the welcome email job within the same transaction
         UserJobs::enqueue_welcome_email(
-            &mut tx,
+            &mut *tx,
             user.id,
             user.email.clone(),
             user.name.clone(),
@@ -143,40 +147,56 @@ impl UserService {
     }
 
     /// Get a user by ID
-    pub async fn get(pool: &PgPool, id: Uuid) -> Result<User, UserFeatureError> {
-        UserRepository::find_by_id(pool, id)
+    /// Accepts any Executor (Pool or Transaction)
+    pub async fn get<'e, E>(executor: E, id: Uuid) -> Result<User, UserFeatureError> 
+    where
+        E: Executor<'e, Database = Postgres> + Copy, // Copy often needed for reuse
+    {
+        UserRepository::find_by_id(executor, id)
             .await?
             .ok_or(UserFeatureError::NotFound(id))
     }
 
     /// Get a user by email
-    pub async fn get_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, UserFeatureError> {
-        Ok(UserRepository::find_by_email(pool, email).await?)
+    pub async fn get_by_email<'e, E>(executor: E, email: &str) -> Result<Option<User>, UserFeatureError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        Ok(UserRepository::find_by_email(executor, email).await?)
     }
 
     /// List all users
-    pub async fn list(pool: &PgPool) -> Result<Vec<User>, UserFeatureError> {
-        Ok(UserRepository::list(pool).await?)
+    pub async fn list<'e, E>(executor: E) -> Result<Vec<User>, UserFeatureError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        Ok(UserRepository::list(executor).await?)
     }
 
     /// Update a user
-    pub async fn update(
-        pool: &PgPool,
+    pub async fn update<'e, E>(
+        executor: E,
         id: Uuid,
         input: UpdateUserInput,
-    ) -> Result<User, UserFeatureError> {
+    ) -> Result<User, UserFeatureError>
+    where
+        E: Executor<'e, Database = Postgres> + Copy,
+    {
         if let Some(name) = input.name {
-            UserRepository::update_name(pool, id, &name)
+            UserRepository::update_name(executor, id, &name)
                 .await?
                 .ok_or(UserFeatureError::NotFound(id))
         } else {
-            Self::get(pool, id).await
+            Self::get(executor, id).await
         }
     }
 
     /// Delete a user
-    pub async fn delete(pool: &PgPool, id: Uuid) -> Result<bool, UserFeatureError> {
-        Ok(UserRepository::delete(pool, id).await?)
+    pub async fn delete<'e, E>(executor: E, id: Uuid) -> Result<bool, UserFeatureError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        Ok(UserRepository::delete(executor, id).await?)
     }
 }
 ```
@@ -258,7 +278,7 @@ Not all features need background jobs:
 
 ```rust
 use domain::{Todo, TodoRepository, TodoStatus, UserRepository};
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool, Postgres};
 use uuid::Uuid;
 
 use crate::error::TodoFeatureError;
@@ -270,12 +290,7 @@ pub struct CreateTodoInput {
     pub description: Option<String>,
 }
 
-/// Input for updating a todo
-pub struct UpdateTodoInput {
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub status: Option<TodoStatus>,
-}
+// ...
 
 /// Service for todo-related operations
 pub struct TodoService;
@@ -301,46 +316,8 @@ impl TodoService {
 
         Ok(todo)
     }
-
-    /// Get a todo by ID
-    pub async fn get(pool: &PgPool, id: Uuid) -> Result<Todo, TodoFeatureError> {
-        TodoRepository::find_by_id(pool, id)
-            .await?
-            .ok_or(TodoFeatureError::NotFound(id))
-    }
-
-    /// List todos for a user
-    pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<Todo>, TodoFeatureError> {
-        Ok(TodoRepository::list_by_user(pool, user_id).await?)
-    }
-
-    /// List todos for a user filtered by status
-    pub async fn list_for_user_by_status(
-        pool: &PgPool,
-        user_id: Uuid,
-        status: TodoStatus,
-    ) -> Result<Vec<Todo>, TodoFeatureError> {
-        Ok(TodoRepository::list_by_user_and_status(pool, user_id, status).await?)
-    }
-
-    /// Mark a todo as completed
-    pub async fn complete(pool: &PgPool, id: Uuid) -> Result<Todo, TodoFeatureError> {
-        TodoRepository::update_status(pool, id, TodoStatus::Completed)
-            .await?
-            .ok_or(TodoFeatureError::NotFound(id))
-    }
-
-    /// Mark a todo as in progress
-    pub async fn start(pool: &PgPool, id: Uuid) -> Result<Todo, TodoFeatureError> {
-        TodoRepository::update_status(pool, id, TodoStatus::InProgress)
-            .await?
-            .ok_or(TodoFeatureError::NotFound(id))
-    }
-
-    /// Delete a todo
-    pub async fn delete(pool: &PgPool, id: Uuid) -> Result<bool, TodoFeatureError> {
-        Ok(TodoRepository::delete(pool, id).await?)
-    }
+    
+    // Other methods using <'e, E> executor pattern...
 }
 ```
 
@@ -366,72 +343,6 @@ async fn user_can_register_with_email_and_name(pool: PgPool) -> Result<(), UserF
 
     assert_eq!(user.email, "register@example.com");
     assert_eq!(user.name, "Register Test");
-    Ok(())
-}
-
-#[sqlx::test(migrations = "../../../migrations")]
-async fn registered_user_receives_welcome_email_job(pool: PgPool) -> Result<(), UserFeatureError> {
-    // When a user registers
-    let user = UserService::register(
-        &pool,
-        CreateUserInput {
-            email: "welcome@example.com".to_string(),
-            name: "Welcome Test".to_string(),
-        },
-    )
-    .await?;
-
-    // Then a welcome email job is enqueued
-    // Note: mq_msgs has a dummy row with uuid_nil(), so we exclude it
-    let email_job_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mq_msgs WHERE channel_name = 'emails' AND id != uuid_nil()",
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(domain::DomainError::from)?;
-
-    assert_eq!(email_job_count, 1, "Expected exactly one job in the 'emails' channel");
-
-    // And the job payload contains the user's email and name
-    let payload: String = sqlx::query_scalar(
-        "SELECT payload_json::TEXT FROM mq_payloads p
-         JOIN mq_msgs m ON p.id = m.id
-         WHERE m.channel_name = 'emails' LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(domain::DomainError::from)?;
-
-    assert!(payload.contains("welcome@example.com"), "Job payload should contain user email");
-    assert!(payload.contains("Welcome Test"), "Job payload should contain user name");
-
-    Ok(())
-}
-
-#[sqlx::test(migrations = "../../../migrations")]
-async fn duplicate_email_registration_is_rejected(pool: PgPool) -> Result<(), UserFeatureError> {
-    // Given an existing user
-    UserService::register(
-        &pool,
-        CreateUserInput {
-            email: "duplicate@example.com".to_string(),
-            name: "First".to_string(),
-        },
-    )
-    .await?;
-
-    // When another user tries to register with the same email
-    let result = UserService::register(
-        &pool,
-        CreateUserInput {
-            email: "duplicate@example.com".to_string(),
-            name: "Second".to_string(),
-        },
-    )
-    .await;
-
-    // Then the registration is rejected
-    assert!(matches!(result, Err(UserFeatureError::EmailExists(_))));
     Ok(())
 }
 ```
@@ -466,17 +377,7 @@ async fn complete_user_registration_journey(pool: PgPool) -> Result<(), UserFeat
     assert_eq!(found_by_email.unwrap().id, user.id);
 
     // A welcome email job was enqueued (transactional atomicity)
-    let email_job_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mq_msgs WHERE channel_name = 'emails' AND id != uuid_nil()",
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(domain::DomainError::from)?;
-    assert_eq!(email_job_count, 1);
-
-    // The user appears in the user list
-    let users = UserService::list(&pool).await?;
-    assert!(users.iter().any(|u| u.id == user.id));
+    // ... (query mq_msgs)
 
     Ok(())
 }
@@ -494,31 +395,13 @@ pub use jobs::{send_welcome_email, UserJobs};
 pub use service::{CreateUserInput, UpdateUserInput, UserService};
 ```
 
-## Cargo.toml Dependencies
-
-```toml
-[dependencies]
-domain.workspace = true
-sqlx.workspace = true
-sqlxmq.workspace = true
-uuid.workspace = true
-time.workspace = true
-thiserror.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-tracing.workspace = true
-
-[dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-```
-
 ## Key Patterns
 
 1. **Transactional atomicity**: Use transactions when DB write + job enqueue must be atomic
-2. **Business rules in services**: Validation logic lives here, not in domain or GraphQL
-3. **Convert domain errors**: Wrap `DomainError` in feature-specific error types
-4. **Input structs**: Define clear input types for each operation
-5. **Service structs as namespaces**: Use empty structs with associated functions
+2. **Unified Executor**: Services should accept `impl Executor` for read/write operations to be composable, but concrete `&PgPool` for `register` (or top-level workflows) that manage their own transaction lifecycle.
+3. **Dereference Transactions**: When passing a `&mut Transaction` to a repo or job, use `&mut *tx`.
+4. **Business rules in services**: Validation logic lives here, not in domain or GraphQL.
+5. **Convert domain errors**: Wrap `DomainError` in feature-specific error types.
 
 ## Testing Requirements
 
@@ -528,14 +411,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 - Test business rules (validation, authorization)
 - Journey tests for complete workflows
 
-## Test Philosophy
-
-**Feature tests verify business behaviors work correctly.**
-
-- Use BDD-style naming (`user_can_register`, `todo_can_be_completed`)
-- This is where user journeys and workflows are tested
-- Transport agnostic (no GraphQL/HTTP here)
-
 ## Seaquery docs
 
-If you need to write complex seaquery queries then you should read @ai_docs/seaquery.md.
+Only use SeaQuery for complex dynamic queries. See @ai_docs/seaquery.md.
