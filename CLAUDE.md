@@ -92,12 +92,30 @@ This stack uses SeaQuery (runtime query building) instead of `sqlx::query!()` ma
 
 ### Testing
 
+**CRITICAL: Tests MUST always be run before completing any task and they MUST pass.** The only exception is if you have been specifically asked to write a failing test (e.g., TDD workflow). Never return to the user with broken tests.
+
 ```bash
-# Run tests (requires Postgres running)
-cargo test
+# Run all tests (requires Postgres running on port 5433)
+DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test
+
+# Run tests for a specific crate
+DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test -p domain
+DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test -p user-feature
+DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test -p todo-feature
+
+# Run a specific test
+DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test test_create_user
 ```
 
-Integration tests use `#[sqlx::test]` which creates isolated databases per test.
+**How tests work:**
+- Integration tests use `#[sqlx::test]` which creates an isolated database per test
+- Migrations run automatically before each test
+- Tests are fully isolated - no test pollution
+- Requires Postgres running (`docker compose up -d`)
+
+**Test locations:**
+- `crates/domain/tests/` - Repository integration tests
+- Feature crates can have their own `tests/` directories
 
 ### Adding a New Feature
 
@@ -121,7 +139,7 @@ The `migrations/` folder contains sqlxmq migrations prefixed with `sqlxmq_`. The
 | Stop Postgres      | `docker compose down`                            |
 | Reset database     | `docker compose down -v && docker compose up -d` |
 | Run app            | `cargo run -p graphql-api`                       |
-| Run tests          | `cargo test`                                     |
+| Run tests          | `DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test` |
 | Check compilation  | `cargo check`                                    |
 | Add migration      | `sqlx migrate add <name>`                        |
 | Rollback migration | `sqlx migrate revert`                            |
