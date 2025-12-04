@@ -190,23 +190,30 @@ Benefits:
 
 ## Database Migrations
 
-Migrations are managed with `sqlx-cli`:
+Migrations run automatically on application startup via `sqlx::migrate!()`. No manual migration step is needed during development.
+
+### Creating New Migrations
 
 ```bash
-# Install sqlx-cli
+# Install sqlx-cli (one-time setup)
 cargo install sqlx-cli --no-default-features --features native-tls,postgres
 
-# Create a new migration
+# Create a new migration (generates timestamped .up.sql and .down.sql files)
 sqlx migrate add create_something
 
-# Run migrations
-sqlx migrate run
-
-# Prepare for offline compilation (CI/Docker)
-cargo sqlx prepare
+# Manual rollback if needed
+sqlx migrate revert
 ```
 
-The application also runs migrations on startup via `sqlx::migrate!()`.
+### Why No `cargo sqlx prepare`?
+
+This stack uses **SeaQuery** for dynamic query building instead of `sqlx::query!()` macros. This means:
+
+- **No offline compilation cache needed** - queries are built at runtime, not compile-time
+- **Simpler CI/Docker builds** - no need for a database connection during compilation
+- **Trade-off**: No compile-time query validation (runtime errors instead)
+
+The `sqlx::migrate!()` macro embeds migration files at compile-time but doesn't require database access.
 
 ## Testing
 
