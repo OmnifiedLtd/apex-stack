@@ -32,7 +32,11 @@ crates/
 ```bash
 # Start Postgres (uses port 5433 to avoid conflicts)
 docker compose up -d
+```
 
+If docker isn't available then you can assume that you're running in a claude web container and you can just start postgres.
+
+```bash
 # Run the application (migrations run automatically)
 cargo run -p graphql-api
 ```
@@ -63,6 +67,7 @@ This project uses `sqlx::query!()` and `sqlx::query_as!()` macros which check yo
 To allow compilation without a running database (e.g., in CI), we use SQLx offline mode. The schema data is stored in the `.sqlx/` directory.
 
 **Workflow:**
+
 1. Start the database: `docker compose up -d`
 2. Make changes to your code or SQL queries.
 3. If you changed any queries, update the offline data:
@@ -134,12 +139,14 @@ DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test
 ```
 
 **How tests work:**
+
 - Integration tests use `#[sqlx::test]` which creates an isolated database per test
 - Migrations run automatically before each test
 - Tests are fully isolated - no test pollution
 - Requires Postgres running (`docker compose up -d`)
 
 **Test locations:**
+
 - `crates/domain/tests/` - Repository integration tests (User, Todo)
 - `crates/features/user-feature/tests/` - BDD behavior tests + user journey tests
 - `crates/features/todo-feature/tests/` - BDD behavior tests + todo workflow tests
@@ -174,17 +181,17 @@ The `migrations/` folder contains sqlxmq migrations prefixed with `sqlxmq_`. The
 
 ## Common Tasks
 
-| Task               | Command                                          |
-| ------------------ | ------------------------------------------------ |
-| Start Postgres     | `docker compose up -d`                           |
-| Stop Postgres      | `docker compose down`                            |
-| Reset database     | `docker compose down -v && docker compose up -d` |
-| Run app            | `cargo run -p graphql-api`                       |
+| Task               | Command                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| Start Postgres     | `docker compose up -d`                                                             |
+| Stop Postgres      | `docker compose down`                                                              |
+| Reset database     | `docker compose down -v && docker compose up -d`                                   |
+| Run app            | `cargo run -p graphql-api`                                                         |
 | Run tests          | `DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test` |
-| Check compilation  | `cargo check`                                    |
-| Update SQLx data   | `cargo sqlx prepare --workspace`                 |
-| Add migration      | `sqlx migrate add <name>`                        |
-| Rollback migration | `sqlx migrate revert`                            |
+| Check compilation  | `cargo check`                                                                      |
+| Update SQLx data   | `cargo sqlx prepare --workspace`                                                   |
+| Add migration      | `sqlx migrate add <name>`                                                          |
+| Rollback migration | `sqlx migrate revert`                                                              |
 
 ## Environment Variables
 
