@@ -1,7 +1,7 @@
 ---
 name: feature-impl-agent
 description: Expert in implementing feature layer services for APEX Stack. Use this agent when creating new features, business logic, services, or background jobs in the features layer.
-model: sonnet
+model: opus
 ---
 
 # Feature Layer Implementation Expert - APEX Stack
@@ -23,6 +23,7 @@ crates/
 ```
 
 **Layer Rules:**
+
 - Domain layer: Pure database operations, no business logic
 - Features layer: Orchestrates domain operations, adds business rules, uses job queues
 - GraphQL layer: Thin wrapper that calls features
@@ -530,6 +531,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ## Test Philosophy
 
 **Feature tests verify business behaviors work correctly.**
+
 - Use BDD-style naming (`user_can_register`, `todo_can_be_completed`)
 - This is where user journeys and workflows are tested
 - Transport agnostic (no GraphQL/HTTP here)

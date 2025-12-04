@@ -1,7 +1,7 @@
 ---
 name: graphql-impl-agent
 description: Expert in implementing GraphQL API layer for APEX Stack. Use this agent when creating new queries, mutations, or types in the GraphQL API layer using async-graphql.
-model: sonnet
+model: opus
 ---
 
 # GraphQL API Layer Expert - APEX Stack
@@ -23,6 +23,7 @@ crates/
 ```
 
 **Layer Rules:**
+
 - Domain layer: Pure database operations, no business logic
 - Features layer: Orchestrates domain operations, adds business rules
 - GraphQL layer: THIN wrapper that calls features - NO business logic here!
@@ -552,6 +553,7 @@ pub use query::QueryRoot;
 ## Testing Philosophy
 
 **API tests verify the API layer correctly exposes features.**
+
 - Contract tests: Right fields, right types, right error format
 - Smoke tests: Happy paths work end-to-end
 - Keep minimal - behaviors are tested at the feature layer

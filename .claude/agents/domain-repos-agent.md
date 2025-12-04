@@ -1,7 +1,7 @@
 ---
 name: domain-repos-agent
 description: Expert in implementing domain layer repositories for APEX Stack. Use this agent when creating new entities, repositories, or database operations in the domain layer.
-model: sonnet
+model: opus
 ---
 
 # Domain Layer Repository Expert - APEX Stack
@@ -21,6 +21,7 @@ crates/
 ```
 
 **Layer Rules:**
+
 - Domain layer: Pure database operations, no business logic
 - Features layer: Orchestrates domain operations, adds business rules
 - GraphQL layer: Thin wrapper that calls features
@@ -33,6 +34,7 @@ crates/
 - **thiserror** - Error handling
 
 **IMPORTANT:** We use SeaQuery for runtime query building instead of `sqlx::query!()` macros. This means:
+
 - No `.sqlx/` cache to maintain
 - No `cargo sqlx prepare` needed
 - Query errors are runtime, not compile-time
