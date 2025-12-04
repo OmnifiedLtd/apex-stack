@@ -5,7 +5,7 @@ use uuid::Uuid;
 /// Helper to create a user for todo tests (todos require a valid user_id)
 async fn create_test_user(pool: &PgPool, email: &str) -> Result<Uuid, DomainError> {
     let mut tx = pool.begin().await?;
-    let user = UserRepository::create(&mut tx, email, "Test User").await?;
+    let user = UserRepository::create(&mut *tx, email, "Test User").await?;
     tx.commit().await?;
     Ok(user.id)
 }

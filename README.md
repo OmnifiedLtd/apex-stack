@@ -71,7 +71,8 @@ query {
 ## Key Features
 
 - **Transactional Atomicity**: Database writes and job enqueues happen in a single transaction—if one fails, both roll back
-- **Type-Safe Query Building**: SeaQuery provides compile-time safe dynamic queries without ORM overhead
+- **Compile-Time Safe Queries**: SQLx macros (`query!`, `query_as!`) validate your SQL against the database schema at compile time
+- **Unified Executor Pattern**: Repositories accept `impl Executor` allowing seamless composition of operations within transactions
 - **Postgres-Native Job Queue**: sqlxmq uses `FOR UPDATE SKIP LOCKED` for high-performance, reliable background jobs
 - **GraphQL API**: async-graphql with Axum for a modern, type-safe API layer
 - **Layered Architecture**: Clean separation between domain, features, and application layers
@@ -112,11 +113,29 @@ apex-stack/
 
 | Layer | Knows About | Responsibility |
 |-------|-------------|----------------|
-| **Domain** | Database (SQLx, SeaQuery) | Entities, repositories, core business rules |
+| **Domain** | Database (SQLx) | Entities, repositories, core business rules |
 | **Features** | Domain, Queues | Use cases, orchestration, background jobs |
 | **Apps** | Features, HTTP/GraphQL | API exposure, request handling, server lifecycle |
 
 This is a pragmatic take on DDD—the domain layer acknowledges the database as fundamental rather than an implementation detail, while still maintaining clear boundaries.
+
+### Unified Executor Pattern
+
+We use the **Unified Executor Pattern** to share transactions across layers.
+
+```rust
+// In Repository (Domain Layer)
+pub async fn create<'e, E>(executor: E, ...) -> Result<...>
+where E: Executor<'e, Database = Postgres> { ... }
+
+// In Service (Feature Layer)
+let mut tx = pool.begin().await?;
+UserRepository::create(&mut *tx, ...).await?; // Note: &mut *tx
+UserJobs::enqueue_welcome_email(&mut *tx, ...).await?;
+tx.commit().await?;
+```
+
+This allows atomic composition: if the job enqueue fails, the user creation rolls back.
 
 ### Why Not SeaORM?
 
@@ -129,17 +148,11 @@ let user = user.insert(&txn).await?;
 // Now you need to extract the raw SQLx transaction... it's clumsy
 ```
 
-```rust
-// With SQLx + SeaQuery, it's natural
-let mut tx = pool.begin().await?;
-UserRepository::create(&mut tx, &email, &name).await?;
-UserJobs::enqueue_welcome_email(&mut tx, user_id, email, name).await?;
-tx.commit().await?;  // Both succeed or both fail
-```
+With SQLx (and our Unified Executor pattern), it's natural and type-safe.
 
 **Trade-offs:**
 - SeaORM: Better for complex relations, auto-generated entities, rapid prototyping
-- SQLx + SeaQuery: Better for performance, compile times, transactional job queues
+- SQLx Macros: Better for performance, compile-time safety, explicit control, and transactional job queues
 
 ### Why sqlxmq Over Apalis?
 
@@ -153,47 +166,6 @@ Both are capable job queue libraries, but sqlxmq excels in Postgres-only environ
 | Middleware | Basic retries | Extensive (rate limiting, tracing) |
 
 **The killer feature**: If your user insert commits, the welcome email job commits with it. If anything fails, both roll back. No orphaned jobs, no missing emails.
-
-### Why SeaQuery?
-
-SeaQuery sits between raw SQL strings and a full ORM:
-
-```rust
-// Dynamic query building without string concatenation
-let mut query = Query::select();
-query.columns([Users::Id, Users::Email]).from(Users::Table);
-
-if let Some(email) = email_filter {
-    query.and_where(Expr::col(Users::Email).eq(email));
-}
-
-if let Some(active) = is_active {
-    query.and_where(Expr::col(Users::Active).eq(active));
-}
-
-let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
-```
-
-Benefits:
-- **Type-safe column names** via `Iden` derive macro
-- **Automatic parameterization** prevents SQL injection
-- **No runtime overhead** of an ORM's query generation
-- **Composable** for complex dynamic queries
-
-#### Trade-off: SeaQuery vs SQLx `query!` Macros
-
-SQLx's `query!()` macros offer **compile-time SQL validation**—queries are checked against your actual database schema during compilation. This is powerful for large teams where schema refactoring (renaming columns, changing types) could break queries scattered across the codebase. With `query!` macros, a renamed column surfaces as compile errors everywhere it's used.
-
-SeaQuery validates queries at **runtime instead of compile-time**. We chose this trade-off because:
-1. **sqlxmq integration** - Transactional job enqueuing requires raw `Transaction` objects, which work more naturally with SeaQuery than `query!` macros
-2. **Simpler CI/CD** - No need to maintain a `.sqlx/` cache or have a database available during builds
-3. **Dynamic queries** - Conditional WHERE clauses and filters are more ergonomic
-
-**Mitigating the runtime validation trade-off:**
-- **Avoid breaking schema changes** - Prefer additive migrations (new columns, new tables) over destructive ones (renaming columns, changing types). When you must rename, add the new column first, migrate data, then remove the old one in a later release
-- **Test your queries** - Write integration tests that exercise your repository methods. The `#[sqlx::test]` attribute makes this easy by providing isolated test databases (see Testing section below)
-
-If you're not using transactional job queues and prefer compile-time safety, consider using `sqlx::query!()` macros instead of SeaQuery.
 
 ## Configuration
 
@@ -220,35 +192,29 @@ sqlx migrate add create_something
 sqlx migrate revert
 ```
 
-### Why No `cargo sqlx prepare`?
+### Offline Mode (CI/CD)
 
-This stack uses **SeaQuery** for dynamic query building instead of `sqlx::query!()` macros. This means:
+We use `sqlx::query!` macros which require database schema information at compile time. To support CI/CD without a running database, we use SQLx's offline mode.
 
-- **No offline compilation cache needed** - queries are built at runtime, not compile-time
-- **Simpler CI/Docker builds** - no need for a database connection during compilation
-- **Trade-off**: No compile-time query validation (runtime errors instead)
-
-The `sqlx::migrate!()` macro embeds migration files at compile-time but doesn't require database access.
+**If you change any SQL queries:**
+1. Ensure your local database is running and migrated.
+2. Run: `cargo sqlx prepare --workspace`
+3. Commit the updated `.sqlx` directory.
 
 ## Testing
 
-The stack is designed for integration testing with real Postgres:
+The stack is designed for integration testing with real Postgres. Each test gets an isolated, rolled-back transaction or isolated database.
 
 ```rust
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../migrations")]
 async fn test_user_registration_enqueues_job(pool: PgPool) -> sqlx::Result<()> {
-    // Each test gets an isolated database
-    let user = UserService::register(&pool, CreateUserInput {
-        email: "test@example.com".into(),
-        name: "Test".into(),
-    }).await?;
-
-    // Verify job was enqueued atomically
-    let job_count = sqlx::query!("SELECT count(*) as c FROM mq_msgs")
-        .fetch_one(&pool)
-        .await?.c.unwrap();
-
-    assert_eq!(job_count, 1);
+    let mut tx = pool.begin().await?;
+    
+    // Pass transaction to repo
+    let user = UserRepository::create(&mut *tx, ...).await?;
+    
+    // Verify in same transaction or commit and verify
+    tx.rollback().await?;
     Ok(())
 }
 ```
@@ -300,7 +266,7 @@ cargo watch -x 'run -p graphql-api'
 
 ### Production Deployment (`Dockerfile`)
 
-The multi-stage Dockerfile creates an optimized production image:
+The multi-stage Dockerfile creates an optimized production image using SQLx offline mode:
 
 - **Stage 1 (Builder)**: Compiles the release binary with all dependencies
 - **Stage 2 (Runtime)**: Minimal Debian image with just the binary (~50MB)
@@ -332,6 +298,58 @@ fly launch
 fly deploy
 ```
 
-## License
+## Integrating SeaQuery for Dynamic Queries
 
-MIT
+While this stack primarily uses `sqlx::query!` macros for compile-time safety, `SeaQuery` remains a powerful option for building complex, dynamic SQL queries where the structure of the query might change at runtime (e.g., advanced filtering and sorting).
+
+To integrate `SeaQuery` into your `domain` crate:
+
+1.  **Add Dependencies**: In `crates/domain/Cargo.toml`, add:
+    ```toml
+    sea-query = { version = "0.32", features = ["postgres-types", "thread-safe", "with-uuid", "with-time"] }
+    sea-query-binder = { version = "0.7", features = ["sqlx-postgres", "with-uuid", "with-time"] }
+    ```
+
+2.  **Usage Example**:
+    ```rust
+    use sea_query::{Query, Expr, PostgresQueryBuilder, Iden};
+    use sea_query_binder::SqlxBinder;
+    use sqlx::{Executor, Postgres}; // Assuming you're in a repository context
+    use uuid::Uuid; // Example type
+
+    #[derive(Iden)]
+    enum MyTable {
+        Table,
+        ColumnA,
+        ColumnB,
+    }
+
+    struct MyStruct { /* ... matching query output ... */ }
+    // Implement sqlx::FromRow for MyStruct if fetching directly,
+    // or fetch into a raw struct and convert.
+
+    async fn find_dynamic_data<'e, E>(
+        executor: E,
+        filter_value: Option<String>
+    ) -> Result<Vec<MyStruct>, Box<dyn std::error::Error + Send + Sync>> // Use a more specific error type
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        let mut query = Query::select();
+        query.columns([MyTable::ColumnA, MyTable::ColumnB]).from(MyTable::Table);
+
+        if let Some(value) = filter_value {
+            query.and_where(Expr::col(MyTable::ColumnA).eq(value));
+        }
+
+        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
+
+        let results = sqlx::query_as_with::<_, MyStruct, _>(&sql, values)
+            .fetch_all(executor)
+            .await?;
+
+        Ok(results)
+    }
+    ```
+
+This example shows how to construct a dynamic `SELECT` query and execute it using `sqlx`'s `Executor` trait, maintaining compatibility with the Unified Executor Pattern.

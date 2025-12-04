@@ -8,8 +8,8 @@ APEX Stack is a Rust web application template using:
 
 - **Axum** - HTTP framework
 - **PostgreSQL** - Database
-- **SQLx** - Database driver (runtime queries via SeaQuery, not compile-time macros)
-- **SeaQuery** - Type-safe SQL query builder
+- **SQLx** - Database driver (compile-time checked queries)
+- **SeaQuery** - Type-safe SQL query builder (for complex dynamic queries)
 - **sqlxmq** - Transactional job queue backed by Postgres
 - **async-graphql** - GraphQL API
 
@@ -39,7 +39,7 @@ cargo run -p graphql-api
 
 ### Database Migrations
 
-Migrations are embedded and run automatically on app startup. No manual steps needed.
+Migrations are embedded and run automatically on app startup.
 
 **Creating a new migration:**
 
@@ -55,7 +55,42 @@ sqlx migrate add <name>
 sqlx migrate revert
 ```
 
+### SQLx Compile-Time Checks
+
+This project uses `sqlx::query!()` and `sqlx::query_as!()` macros which check your SQL against the database schema at compile time.
+
+**Offline Mode (CI/Docker):**
+To allow compilation without a running database (e.g., in CI), we use SQLx offline mode. The schema data is stored in the `.sqlx/` directory.
+
+**Workflow:**
+1. Start the database: `docker compose up -d`
+2. Make changes to your code or SQL queries.
+3. If you changed any queries, update the offline data:
+   ```bash
+   export DATABASE_URL=postgres://postgres:postgres@localhost:5433/apex_stack
+   cargo sqlx prepare --workspace
+   ```
+4. Commit the `.sqlx/` directory changes.
+
+**Note:** If you get compilation errors about "database error", make sure your DB is running and you have run migrations, or that your `.sqlx` data is up to date.
+
 ### Key Patterns
+
+#### Unified Executor Pattern
+
+Repositories accept `impl sqlx::Executor` to allow seamless reuse of transactions across layers.
+
+```rust
+// In Repository
+pub async fn create<'e, E>(executor: E, ...) -> Result<...>
+where E: Executor<'e, Database = Postgres> { ... }
+
+// In Service (Atomic Workflow)
+let mut tx = pool.begin().await?;
+UserRepository::create(&mut *tx, ...).await?; // Note the &mut *tx
+Job::spawn(&mut *tx).await?;
+tx.commit().await?;
+```
 
 #### Transactional Job Enqueue (the "killer feature")
 
@@ -63,12 +98,14 @@ User creation and welcome email job are atomic:
 
 ```rust
 let mut tx = pool.begin().await?;
-UserRepository::create(&mut tx, &email, &name).await?;
-UserJobs::enqueue_welcome_email(&mut tx, user_id, email, name).await?;
+UserRepository::create(&mut *tx, &email, &name).await?;
+UserJobs::enqueue_welcome_email(&mut *tx, user_id, email, name).await?;
 tx.commit().await?;  // Both succeed or both fail
 ```
 
-#### SeaQuery for Dynamic Queries
+#### SeaQuery for Dynamic Queries (Optional)
+
+For complex search/filter queries where macros are too rigid, we use SeaQuery:
 
 ```rust
 let (sql, values) = Query::select()
@@ -78,21 +115,13 @@ let (sql, values) = Query::select()
     .build_sqlx(PostgresQueryBuilder);
 
 sqlx::query_as_with::<_, User, _>(&sql, values)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?
 ```
 
-#### No `cargo sqlx prepare` Needed
-
-This stack uses SeaQuery (runtime query building) instead of `sqlx::query!()` macros (compile-time checked). Benefits:
-
-- No `.sqlx/` cache to maintain
-- Docker/CI builds don't need a running database
-- Trade-off: Query errors are runtime, not compile-time
-
 ### Testing
 
-**CRITICAL: Tests MUST always be run before completing any task and they MUST pass.** The only exception is if you have been specifically asked to write a failing test (e.g., TDD workflow). Never return to the user with broken tests.
+**CRITICAL: Tests MUST always be run before completing any task and they MUST pass.**
 
 ```bash
 # Run all tests (requires Postgres running on port 5433)
@@ -102,9 +131,6 @@ DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test
 DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test -p domain
 DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test -p user-feature
 DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test -p todo-feature
-
-# Run a specific test
-DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test test_create_user
 ```
 
 **How tests work:**
@@ -122,7 +148,7 @@ DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test
 ### Test Philosophy
 
 **Domain tests:** Verify database operations work correctly.
-Focus on CRUD, constraints, and edge cases.
+Focus on CRUD, constraints, and edge cases. Use `tx.rollback()` to keep tests fast/clean if manually managing transactions, though `#[sqlx::test]` handles isolation well too.
 
 **Feature tests:** Verify business behaviors work correctly.
 Use BDD-style naming (`user_can_register`, `todo_can_be_completed`).
@@ -156,6 +182,7 @@ The `migrations/` folder contains sqlxmq migrations prefixed with `sqlxmq_`. The
 | Run app            | `cargo run -p graphql-api`                       |
 | Run tests          | `DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test` |
 | Check compilation  | `cargo check`                                    |
+| Update SQLx data   | `cargo sqlx prepare --workspace`                 |
 | Add migration      | `sqlx migrate add <name>`                        |
 | Rollback migration | `sqlx migrate revert`                            |
 
