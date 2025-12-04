@@ -34,7 +34,7 @@ crates/
 docker compose up -d
 ```
 
-If Docker isn't available (e.g., in a cloud container), use the provided setup script:
+If Docker isn't available (e.g., in a cloud container), use the provided setup script. This script will install Postgres, start it, **and run database migrations**.
 
 ```bash
 # Install and start PostgreSQL natively (uses default port 5432)
@@ -44,7 +44,7 @@ If Docker isn't available (e.g., in a cloud container), use the provided setup s
 Then continue with:
 
 ```bash
-# Run the application (migrations run automatically)
+# Run the application
 cargo run -p graphql-api
 ```
 

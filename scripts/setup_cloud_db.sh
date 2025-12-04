@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# Only run in remote environments
+if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
+  exit 0
+fi
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -82,7 +87,20 @@ else
     echo -e "${GREEN}Database 'apex_stack' already exists.${NC}"
 fi
 
-# 5. Output Success
+# 5. Install sqlx-cli
+if ! command -v sqlx &> /dev/null; then
+    echo "Installing sqlx-cli..."
+    cargo install sqlx-cli --no-default-features --features native-tls,postgres
+else
+    echo -e "${GREEN}sqlx-cli is already installed.${NC}"
+fi
+
+# 6. Run Migrations
+echo "Running database migrations..."
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/apex_stack
+sqlx migrate run
+
+# 7. Output Success
 echo -e "${GREEN}Setup Complete!${NC}"
 echo ""
 echo "Your database is running on default port 5432."
