@@ -117,6 +117,7 @@ DATABASE_URL="postgres://postgres:postgres@localhost:5433/apex_stack" cargo test
 - `crates/domain/tests/` - Repository integration tests (User, Todo)
 - `crates/features/user-feature/tests/` - User service tests (registration, job enqueue)
 - `crates/features/todo-feature/tests/` - Todo service tests (CRUD, status transitions)
+- `crates/apps/graphql-api/tests/` - BDD-style GraphQL API tests (user journeys, behaviors)
 
 ### Adding a New Feature
 

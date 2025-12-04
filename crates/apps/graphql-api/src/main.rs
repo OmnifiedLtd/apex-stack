@@ -1,26 +1,22 @@
 use std::env;
 
-use async_graphql::{EmptySubscription, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
     extract::State,
     routing::{get, post},
     Router,
 };
+use graphql_api::{build_schema, AppSchema};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod schema;
-
-use schema::{MutationRoot, QueryRoot};
-
 /// Application state shared across handlers
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
-    pub schema: Schema<QueryRoot, MutationRoot, EmptySubscription>,
+    pub schema: AppSchema,
 }
 
 /// GraphQL handler
@@ -75,9 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Migrations complete");
 
     // Build GraphQL schema
-    let schema = Schema::build(QueryRoot, MutationRoot, EmptySubscription)
-        .data(pool.clone())
-        .finish();
+    let schema = build_schema(pool.clone());
 
     // Create app state
     let state = AppState {
