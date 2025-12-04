@@ -535,3 +535,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 - Use BDD-style naming (`user_can_register`, `todo_can_be_completed`)
 - This is where user journeys and workflows are tested
 - Transport agnostic (no GraphQL/HTTP here)
+
+## Seaquery docs
+
+If you need to write complex seaquery queries then you should read @ai_docs/seaquery.md.

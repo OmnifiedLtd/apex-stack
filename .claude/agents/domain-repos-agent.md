@@ -424,3 +424,7 @@ pub use error::DomainError;
 pub use user::{User, UserRepository, Users};
 pub use todo::{Todo, TodoRepository, TodoStatus, Todos};
 ```
+
+## Seaquery docs
+
+If you need to write complex seaquery queries then you should read @ai_docs/seaquery.md.
