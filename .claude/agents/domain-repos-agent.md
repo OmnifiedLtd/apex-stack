@@ -1,6 +1,7 @@
 name: domain-repos-agent
 description: Expert in implementing domain layer repositories for APEX Stack. Use this agent when creating new entities, repositories, or database operations in the domain layer.
 model: opus
+
 ---
 
 # Domain Layer Repository Expert - APEX Stack
@@ -119,7 +120,7 @@ impl UserRepository {
     }
 
     /// Find a user by ID
-    pub async fn find_by_id<'e, E>(executor: E, id: Uuid) -> Result<Option<User>, DomainError> 
+    pub async fn find_by_id<'e, E>(executor: E, id: Uuid) -> Result<Option<User>, DomainError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -139,7 +140,7 @@ impl UserRepository {
     }
 
     /// List all users
-    pub async fn list<'e, E>(executor: E) -> Result<Vec<User>, DomainError> 
+    pub async fn list<'e, E>(executor: E) -> Result<Vec<User>, DomainError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -158,7 +159,7 @@ impl UserRepository {
     }
 
     /// Delete a user by ID
-    pub async fn delete<'e, E>(executor: E, id: Uuid) -> Result<bool, DomainError> 
+    pub async fn delete<'e, E>(executor: E, id: Uuid) -> Result<bool, DomainError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -309,7 +310,7 @@ async fn test_create_user(pool: PgPool) -> Result<(), DomainError> {
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_find_by_id(pool: PgPool) -> Result<(), DomainError> {
     let mut tx = pool.begin().await?;
-    
+
     // Setup
     let created = UserRepository::create(&mut *tx, "find@example.com", "Find Me").await?;
 
@@ -317,7 +318,7 @@ async fn test_find_by_id(pool: PgPool) -> Result<(), DomainError> {
     let found = UserRepository::find_by_id(&mut *tx, created.id).await?;
 
     assert!(found.is_some());
-    
+
     tx.rollback().await?;
     Ok(())
 }
@@ -354,4 +355,4 @@ pub use todo::{Todo, TodoRepository, TodoStatus};
 
 ## Seaquery docs
 
-Only use SeaQuery for complex dynamic queries (search filters). See @ai_docs/seaquery.md.
+Only use SeaQuery for complex dynamic queries (search filters).

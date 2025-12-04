@@ -1,6 +1,7 @@
 name: feature-impl-agent
 description: Expert in implementing feature layer services for APEX Stack. Use this agent when creating new features, business logic, services, or background jobs in the features layer.
 model: opus
+
 ---
 
 # Feature Layer Implementation Expert - APEX Stack
@@ -148,7 +149,7 @@ impl UserService {
 
     /// Get a user by ID
     /// Accepts any Executor (Pool or Transaction)
-    pub async fn get<'e, E>(executor: E, id: Uuid) -> Result<User, UserFeatureError> 
+    pub async fn get<'e, E>(executor: E, id: Uuid) -> Result<User, UserFeatureError>
     where
         E: Executor<'e, Database = Postgres> + Copy, // Copy often needed for reuse
     {
@@ -316,7 +317,7 @@ impl TodoService {
 
         Ok(todo)
     }
-    
+
     // Other methods using <'e, E> executor pattern...
 }
 ```
@@ -413,4 +414,4 @@ pub use service::{CreateUserInput, UpdateUserInput, UserService};
 
 ## Seaquery docs
 
-Only use SeaQuery for complex dynamic queries. See @ai_docs/seaquery.md.
+Only use SeaQuery for complex dynamic queries.
