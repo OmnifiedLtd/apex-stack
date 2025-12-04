@@ -1,6 +1,6 @@
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use sqlx::{FromRow, PgPool, Postgres, Transaction};
+use sqlx::{Executor, FromRow, Postgres};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -32,11 +32,14 @@ pub struct UserRepository;
 
 impl UserRepository {
     /// Create a new user within a transaction
-    pub async fn create(
-        tx: &mut Transaction<'_, Postgres>,
+    pub async fn create<'e, E>(
+        executor: E,
         email: &str,
         name: &str,
-    ) -> Result<User, DomainError> {
+    ) -> Result<User, DomainError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         let id = Uuid::new_v4();
         let now = OffsetDateTime::now_utc();
 
@@ -60,14 +63,17 @@ impl UserRepository {
             .build_sqlx(PostgresQueryBuilder);
 
         let user = sqlx::query_as_with::<_, User, _>(&sql, values)
-            .fetch_one(&mut **tx)
+            .fetch_one(executor)
             .await?;
 
         Ok(user)
     }
 
     /// Find a user by ID
-    pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, DomainError> {
+    pub async fn find_by_id<'e, E>(executor: E, id: Uuid) -> Result<Option<User>, DomainError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         let (sql, values) = Query::select()
             .columns([
                 Users::Id,
@@ -81,14 +87,20 @@ impl UserRepository {
             .build_sqlx(PostgresQueryBuilder);
 
         let user = sqlx::query_as_with::<_, User, _>(&sql, values)
-            .fetch_optional(pool)
+            .fetch_optional(executor)
             .await?;
 
         Ok(user)
     }
 
     /// Find a user by email
-    pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, DomainError> {
+    pub async fn find_by_email<'e, E>(
+        executor: E,
+        email: &str,
+    ) -> Result<Option<User>, DomainError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         let (sql, values) = Query::select()
             .columns([
                 Users::Id,
@@ -102,14 +114,17 @@ impl UserRepository {
             .build_sqlx(PostgresQueryBuilder);
 
         let user = sqlx::query_as_with::<_, User, _>(&sql, values)
-            .fetch_optional(pool)
+            .fetch_optional(executor)
             .await?;
 
         Ok(user)
     }
 
     /// List all users
-    pub async fn list(pool: &PgPool) -> Result<Vec<User>, DomainError> {
+    pub async fn list<'e, E>(executor: E) -> Result<Vec<User>, DomainError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         let (sql, values) = Query::select()
             .columns([
                 Users::Id,
@@ -123,18 +138,21 @@ impl UserRepository {
             .build_sqlx(PostgresQueryBuilder);
 
         let users = sqlx::query_as_with::<_, User, _>(&sql, values)
-            .fetch_all(pool)
+            .fetch_all(executor)
             .await?;
 
         Ok(users)
     }
 
     /// Update a user's name
-    pub async fn update_name(
-        pool: &PgPool,
+    pub async fn update_name<'e, E>(
+        executor: E,
         id: Uuid,
         name: &str,
-    ) -> Result<Option<User>, DomainError> {
+    ) -> Result<Option<User>, DomainError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         let now = OffsetDateTime::now_utc();
 
         let (sql, values) = Query::update()
@@ -148,20 +166,23 @@ impl UserRepository {
             .build_sqlx(PostgresQueryBuilder);
 
         let user = sqlx::query_as_with::<_, User, _>(&sql, values)
-            .fetch_optional(pool)
+            .fetch_optional(executor)
             .await?;
 
         Ok(user)
     }
 
     /// Delete a user by ID
-    pub async fn delete(pool: &PgPool, id: Uuid) -> Result<bool, DomainError> {
+    pub async fn delete<'e, E>(executor: E, id: Uuid) -> Result<bool, DomainError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         let (sql, values) = Query::delete()
             .from_table(Users::Table)
             .and_where(Expr::col(Users::Id).eq(id))
             .build_sqlx(PostgresQueryBuilder);
 
-        let result = sqlx::query_with(&sql, values).execute(pool).await?;
+        let result = sqlx::query_with(&sql, values).execute(executor).await?;
 
         Ok(result.rows_affected() > 0)
     }

@@ -1,5 +1,5 @@
 use domain::{User, UserRepository};
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool, Postgres};
 use uuid::Uuid;
 
 use crate::error::UserFeatureError;
@@ -21,8 +21,12 @@ pub struct UserService;
 
 impl UserService {
     /// Register a new user and enqueue a welcome email atomically
+    /// 
+    /// Requires a Pool to manage the transaction internally.
     pub async fn register(pool: &PgPool, input: CreateUserInput) -> Result<User, UserFeatureError> {
         // Check if email already exists
+        // Note: We use the pool here, effectively a separate read. 
+        // In high concurrency, a race condition exists here, but the DB constraint will catch it.
         if UserRepository::find_by_email(pool, &input.email)
             .await?
             .is_some()
@@ -34,7 +38,7 @@ impl UserService {
         let mut tx = pool.begin().await.map_err(domain::DomainError::from)?;
 
         // Create the user
-        let user = UserRepository::create(&mut tx, &input.email, &input.name).await?;
+        let user = UserRepository::create(&mut *tx, &input.email, &input.name).await?;
 
         // Enqueue the welcome email job within the same transaction
         UserJobs::enqueue_welcome_email(
@@ -53,39 +57,57 @@ impl UserService {
     }
 
     /// Get a user by ID
-    pub async fn get(pool: &PgPool, id: Uuid) -> Result<User, UserFeatureError> {
-        UserRepository::find_by_id(pool, id)
+    pub async fn get<'e, E>(executor: E, id: Uuid) -> Result<User, UserFeatureError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        UserRepository::find_by_id(executor, id)
             .await?
             .ok_or(UserFeatureError::NotFound(id))
     }
 
     /// Get a user by email
-    pub async fn get_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, UserFeatureError> {
-        Ok(UserRepository::find_by_email(pool, email).await?)
+    pub async fn get_by_email<'e, E>(
+        executor: E,
+        email: &str,
+    ) -> Result<Option<User>, UserFeatureError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        Ok(UserRepository::find_by_email(executor, email).await?)
     }
 
     /// List all users
-    pub async fn list(pool: &PgPool) -> Result<Vec<User>, UserFeatureError> {
-        Ok(UserRepository::list(pool).await?)
+    pub async fn list<'e, E>(executor: E) -> Result<Vec<User>, UserFeatureError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        Ok(UserRepository::list(executor).await?)
     }
 
     /// Update a user
-    pub async fn update(
-        pool: &PgPool,
+    pub async fn update<'e, E>(
+        executor: E,
         id: Uuid,
         input: UpdateUserInput,
-    ) -> Result<User, UserFeatureError> {
+    ) -> Result<User, UserFeatureError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         if let Some(name) = input.name {
-            UserRepository::update_name(pool, id, &name)
+            UserRepository::update_name(executor, id, &name)
                 .await?
                 .ok_or(UserFeatureError::NotFound(id))
         } else {
-            Self::get(pool, id).await
+            Self::get(executor, id).await
         }
     }
 
     /// Delete a user
-    pub async fn delete(pool: &PgPool, id: Uuid) -> Result<bool, UserFeatureError> {
-        Ok(UserRepository::delete(pool, id).await?)
+    pub async fn delete<'e, E>(executor: E, id: Uuid) -> Result<bool, UserFeatureError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        Ok(UserRepository::delete(executor, id).await?)
     }
 }
