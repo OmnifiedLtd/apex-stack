@@ -34,7 +34,14 @@ crates/
 docker compose up -d
 ```
 
-If docker isn't available then you can assume that you're running in a claude cloud container. then you should check if postgres is running and if not then start it. Then continue with:
+If Docker isn't available (e.g., in a cloud container), use the provided setup script:
+
+```bash
+# Install and start PostgreSQL natively (uses default port 5432)
+./scripts/setup_cloud_db.sh
+```
+
+Then continue with:
 
 ```bash
 # Run the application (migrations run automatically)
