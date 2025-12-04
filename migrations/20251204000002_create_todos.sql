@@ -1,13 +1,10 @@
--- Create todo status enum
-CREATE TYPE todo_status AS ENUM ('pending', 'in_progress', 'completed');
-
 -- Create todos table
 CREATE TABLE todos (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
-    status todo_status NOT NULL DEFAULT 'pending',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

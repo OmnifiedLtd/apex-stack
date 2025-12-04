@@ -20,26 +20,52 @@ pub enum Todos {
 }
 
 /// Todo status enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
-#[sqlx(type_name = "todo_status", rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TodoStatus {
     Pending,
     InProgress,
     Completed,
 }
 
-impl From<TodoStatus> for sea_query::Value {
-    fn from(status: TodoStatus) -> Self {
-        match status {
-            TodoStatus::Pending => "pending".into(),
-            TodoStatus::InProgress => "in_progress".into(),
-            TodoStatus::Completed => "completed".into(),
+impl TodoStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TodoStatus::Pending => "pending",
+            TodoStatus::InProgress => "in_progress",
+            TodoStatus::Completed => "completed",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "pending" => Some(TodoStatus::Pending),
+            "in_progress" => Some(TodoStatus::InProgress),
+            "completed" => Some(TodoStatus::Completed),
+            _ => None,
         }
     }
 }
 
+impl From<TodoStatus> for sea_query::Value {
+    fn from(status: TodoStatus) -> Self {
+        status.as_str().into()
+    }
+}
+
+/// Raw todo row from database
+#[derive(Debug, Clone, FromRow)]
+struct TodoRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub title: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
 /// Todo entity
-#[derive(Debug, Clone, FromRow, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Todo {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -48,6 +74,20 @@ pub struct Todo {
     pub status: TodoStatus,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
+}
+
+impl From<TodoRow> for Todo {
+    fn from(row: TodoRow) -> Self {
+        Todo {
+            id: row.id,
+            user_id: row.user_id,
+            title: row.title,
+            description: row.description,
+            status: TodoStatus::from_str(&row.status).unwrap_or(TodoStatus::Pending),
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
 }
 
 /// Repository for Todo operations
@@ -87,11 +127,11 @@ impl TodoRepository {
             .returning_all()
             .build_sqlx(PostgresQueryBuilder);
 
-        let todo = sqlx::query_as_with::<_, Todo, _>(&sql, values)
+        let row = sqlx::query_as_with::<_, TodoRow, _>(&sql, values)
             .fetch_one(pool)
             .await?;
 
-        Ok(todo)
+        Ok(row.into())
     }
 
     /// Find a todo by ID
@@ -110,11 +150,11 @@ impl TodoRepository {
             .and_where(Expr::col(Todos::Id).eq(id))
             .build_sqlx(PostgresQueryBuilder);
 
-        let todo = sqlx::query_as_with::<_, Todo, _>(&sql, values)
+        let row = sqlx::query_as_with::<_, TodoRow, _>(&sql, values)
             .fetch_optional(pool)
             .await?;
 
-        Ok(todo)
+        Ok(row.map(Into::into))
     }
 
     /// List todos for a user
@@ -134,11 +174,11 @@ impl TodoRepository {
             .order_by(Todos::CreatedAt, sea_query::Order::Desc)
             .build_sqlx(PostgresQueryBuilder);
 
-        let todos = sqlx::query_as_with::<_, Todo, _>(&sql, values)
+        let rows = sqlx::query_as_with::<_, TodoRow, _>(&sql, values)
             .fetch_all(pool)
             .await?;
 
-        Ok(todos)
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 
     /// List todos by status for a user
@@ -163,11 +203,11 @@ impl TodoRepository {
             .order_by(Todos::CreatedAt, sea_query::Order::Desc)
             .build_sqlx(PostgresQueryBuilder);
 
-        let todos = sqlx::query_as_with::<_, Todo, _>(&sql, values)
+        let rows = sqlx::query_as_with::<_, TodoRow, _>(&sql, values)
             .fetch_all(pool)
             .await?;
 
-        Ok(todos)
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 
     /// Update a todo's status
@@ -188,11 +228,11 @@ impl TodoRepository {
             .returning_all()
             .build_sqlx(PostgresQueryBuilder);
 
-        let todo = sqlx::query_as_with::<_, Todo, _>(&sql, values)
+        let row = sqlx::query_as_with::<_, TodoRow, _>(&sql, values)
             .fetch_optional(pool)
             .await?;
 
-        Ok(todo)
+        Ok(row.map(Into::into))
     }
 
     /// Update a todo's title and description
@@ -215,11 +255,11 @@ impl TodoRepository {
             .returning_all()
             .build_sqlx(PostgresQueryBuilder);
 
-        let todo = sqlx::query_as_with::<_, Todo, _>(&sql, values)
+        let row = sqlx::query_as_with::<_, TodoRow, _>(&sql, values)
             .fetch_optional(pool)
             .await?;
 
-        Ok(todo)
+        Ok(row.map(Into::into))
     }
 
     /// Delete a todo

@@ -48,6 +48,9 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Environment
+dotenvy = "0.15"
+
 # Workspace crates
 domain = { path = "crates/domain" }
 user-feature = { path = "crates/features/user-feature" }
