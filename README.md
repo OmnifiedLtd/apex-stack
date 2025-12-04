@@ -180,6 +180,21 @@ Benefits:
 - **No runtime overhead** of an ORM's query generation
 - **Composable** for complex dynamic queries
 
+#### Trade-off: SeaQuery vs SQLx `query!` Macros
+
+SQLx's `query!()` macros offer **compile-time SQL validation**—queries are checked against your actual database schema during compilation. This is powerful for large teams where schema refactoring (renaming columns, changing types) could break queries scattered across the codebase. With `query!` macros, a renamed column surfaces as compile errors everywhere it's used.
+
+SeaQuery validates queries at **runtime instead of compile-time**. We chose this trade-off because:
+1. **sqlxmq integration** - Transactional job enqueuing requires raw `Transaction` objects, which work more naturally with SeaQuery than `query!` macros
+2. **Simpler CI/CD** - No need to maintain a `.sqlx/` cache or have a database available during builds
+3. **Dynamic queries** - Conditional WHERE clauses and filters are more ergonomic
+
+**Mitigating the runtime validation trade-off:**
+- **Avoid breaking schema changes** - Prefer additive migrations (new columns, new tables) over destructive ones (renaming columns, changing types). When you must rename, add the new column first, migrate data, then remove the old one in a later release
+- **Test your queries** - Write integration tests that exercise your repository methods. The `#[sqlx::test]` attribute makes this easy by providing isolated test databases (see Testing section below)
+
+If you're not using transactional job queues and prefer compile-time safety, consider using `sqlx::query!()` macros instead of SeaQuery.
+
 ## Configuration
 
 | Variable | Default | Description |
