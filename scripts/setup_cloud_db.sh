@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# Only run in remote environments
+if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
+  exit 0
+fi
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
