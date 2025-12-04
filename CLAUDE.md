@@ -34,7 +34,7 @@ crates/
 docker compose up -d
 ```
 
-If docker isn't available then you can assume that you're running in a claude web container and you can just start postgres.
+If docker isn't available then you can assume that you're running in a claude cloud container. then you should check if postgres is running and if not then start it. Then continue with:
 
 ```bash
 # Run the application (migrations run automatically)
